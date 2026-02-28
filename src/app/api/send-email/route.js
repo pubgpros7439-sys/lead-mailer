@@ -5,7 +5,29 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // ── Initialize Gemini AI ──────────────────────────────────────
 function getGeminiModel() {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  return genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  return genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+}
+
+// ── Retry wrapper for Gemini calls ────────────────────────────
+async function callWithRetry(fn, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRetryable =
+        err.message?.includes("429") ||
+        err.message?.includes("RetryInfo") ||
+        err.message?.includes("RESOURCE_EXHAUSTED") ||
+        err.message?.includes("overloaded");
+
+      if (isRetryable && i < maxRetries - 1) {
+        // Wait 15 seconds before retrying (rate limits need longer waits)
+        await new Promise((r) => setTimeout(r, 15000 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Use AI to craft the email ─────────────────────────────────
@@ -21,26 +43,30 @@ Rules:
 - Keep it concise (3-4 short paragraphs max)
 - Sound human, warm, and conversational — NOT robotic or salesy
 - End with a soft call-to-action (like asking for a quick chat)
-- Sign off with: "Looking forward to hearing from you!\\n${fromName}"
+- Sign off with: "Looking forward to hearing from you!\n${fromName}"
 - Do NOT use placeholders like [your name] or [company] — use the actual values provided
 - Do NOT include any markdown formatting, just plain text
 - Do NOT add a subject line — only the email body`;
 
-  const result = await model.generateContent([
-    { text: systemPrompt },
-    { text: `Instruction: ${prompt}\n\nLead name: ${name}\nLead company: ${company}\nSender name: ${fromName}` },
-  ]);
-
-  return result.response.text().trim();
+  return callWithRetry(async () => {
+    const result = await model.generateContent([
+      { text: systemPrompt },
+      {
+        text: `Instruction: ${prompt}\n\nLead name: ${name}\nLead company: ${company}\nSender name: ${fromName}`,
+      },
+    ]);
+    return result.response.text().trim();
+  });
 }
 
 // ── Use AI to generate a relevant subject line ────────────────
 async function craftSubject(prompt, company) {
   const model = getGeminiModel();
 
-  const result = await model.generateContent([
-    {
-      text: `Generate exactly ONE short, compelling email subject line for a cold email to "${company}". 
+  return callWithRetry(async () => {
+    const result = await model.generateContent([
+      {
+        text: `Generate exactly ONE short, compelling email subject line for a cold email to "${company}". 
 The email is about: ${prompt}
 
 Rules:
@@ -49,10 +75,10 @@ Rules:
 - Sound natural and curiosity-driven
 - Do NOT include "Subject:" prefix
 - Return ONLY the subject line text, nothing else`,
-    },
-  ]);
-
-  return result.response.text().trim().replace(/^["']|["']$/g, "");
+      },
+    ]);
+    return result.response.text().trim().replace(/^["']|["']$/g, "");
+  });
 }
 
 export async function POST(request) {
@@ -62,7 +88,10 @@ export async function POST(request) {
     // ── Validate required fields ──────────────────────────────────
     if (!name || !email || !company) {
       return NextResponse.json(
-        { success: false, error: "Missing required fields: name, email, company" },
+        {
+          success: false,
+          error: "Missing required fields: name, email, company",
+        },
         { status: 400 }
       );
     }
@@ -92,11 +121,9 @@ export async function POST(request) {
 
     const fromName = process.env.FROM_NAME || "Your Name";
 
-    // ── AI-craft the email and subject ────────────────────────────
-    const [emailBody, subject] = await Promise.all([
-      craftEmail(prompt, name, company, fromName),
-      craftSubject(prompt, company),
-    ]);
+    // ── AI-craft the email and subject (sequential to avoid rate limits) ──
+    const emailBody = await craftEmail(prompt, name, company, fromName);
+    const subject = await craftSubject(prompt, company);
 
     // ── Convert plain text to HTML ────────────────────────────────
     const htmlBody = `
