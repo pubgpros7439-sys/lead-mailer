@@ -101,7 +101,60 @@ function formatElapsed(seconds) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // MAIN PAGE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ─── Lock Icon ────────────────────────────────────────────────
+function LockIcon() {
+    return (
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+    );
+}
+
 export default function Home() {
+    // ── Auth state ──────────────────────────────────────────────
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [password, setPassword] = useState("");
+    const [authError, setAuthError] = useState("");
+    const [authLoading, setAuthLoading] = useState(false);
+    const [checkingSession, setCheckingSession] = useState(true);
+
+    // ── Check session on mount ──────────────────────────────────
+    useEffect(() => {
+        const session = sessionStorage.getItem("lead-mailer-auth");
+        if (session === "authenticated") {
+            setIsAuthenticated(true);
+        }
+        setCheckingSession(false);
+    }, []);
+
+    // ── Handle login ────────────────────────────────────────────
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setAuthLoading(true);
+        setAuthError("");
+
+        try {
+            const res = await fetch("/api/auth", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password }),
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                sessionStorage.setItem("lead-mailer-auth", "authenticated");
+                setIsAuthenticated(true);
+            } else {
+                setAuthError("Wrong password. Try again.");
+                setPassword("");
+            }
+        } catch {
+            setAuthError("Something went wrong. Try again.");
+        }
+        setAuthLoading(false);
+    };
+
     // state: "input" | "sending" | "done"
     const [currentState, setCurrentState] = useState("input");
     const [leads, setLeads] = useState([]);
@@ -216,6 +269,66 @@ export default function Home() {
     const sentCount = statuses.filter((s) => s === "sent").length;
     const failedCount = statuses.filter((s) => s === "failed").length;
     const doneCount = sentCount + failedCount;
+
+    // ── Loading screen while checking session ───────────────────
+    if (checkingSession) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+                <SpinnerIcon size={32} />
+            </div>
+        );
+    }
+
+    // ── Login Screen ────────────────────────────────────────────
+    if (!isAuthenticated) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
+                <div className="w-full max-w-sm fade-in-up">
+                    <div className="text-center mb-8">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mb-6">
+                            <LockIcon />
+                        </div>
+                        <h1 className="text-2xl font-bold text-white mb-2">Lead Mailer</h1>
+                        <p className="text-sm text-[#8b8ba3]">Enter your password to continue</p>
+                    </div>
+
+                    <form onSubmit={handleLogin} className="space-y-4">
+                        <div className="rounded-2xl bg-[#12121a] border border-[#1e1e2e] p-6 space-y-4">
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Enter password"
+                                autoFocus
+                                className="w-full bg-[#0e0e16] border border-[#2a2a3d] rounded-xl px-4 py-3 text-white placeholder:text-[#3a3a50] text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-300"
+                            />
+
+                            {authError && (
+                                <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2">
+                                    ⚠️ {authError}
+                                </p>
+                            )}
+
+                            <button
+                                type="submit"
+                                disabled={!password.trim() || authLoading}
+                                className="w-full py-3.5 rounded-xl font-semibold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2
+                                    disabled:bg-[#1a1a25] disabled:text-[#3a3a50] disabled:cursor-not-allowed
+                                    bg-indigo-600 hover:bg-indigo-500 text-white hover:shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98]"
+                            >
+                                {authLoading ? <SpinnerIcon size={18} /> : "Unlock"}
+                            </button>
+                        </div>
+                    </form>
+
+                    <div className="text-center mt-6 text-[#2a2a3d] text-xs">
+                        Secured Access · Lead Mailer
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  RENDER
@@ -482,12 +595,12 @@ export default function Home() {
                                             <div className="flex-1 min-w-0">
                                                 <p
                                                     className={`text-sm font-medium truncate ${status === "sent"
-                                                            ? "text-emerald-400"
-                                                            : status === "failed"
-                                                                ? "text-red-400"
-                                                                : status === "sending"
-                                                                    ? "text-white"
-                                                                    : "text-[#555570]"
+                                                        ? "text-emerald-400"
+                                                        : status === "failed"
+                                                            ? "text-red-400"
+                                                            : status === "sending"
+                                                                ? "text-white"
+                                                                : "text-[#555570]"
                                                         }`}
                                                 >
                                                     {status === "sent" &&
@@ -506,8 +619,8 @@ export default function Home() {
                                                 </p>
                                                 <p
                                                     className={`text-xs mt-0.5 truncate ${status === "sent" || status === "sending"
-                                                            ? "text-[#8b8ba3]"
-                                                            : "text-[#3a3a50]"
+                                                        ? "text-[#8b8ba3]"
+                                                        : "text-[#3a3a50]"
                                                         }`}
                                                 >
                                                     {lead.company} · {lead.email}
