@@ -450,15 +450,18 @@ export default function Home() {
 
                         {/* Prompt Textarea */}
                         <div className="rounded-2xl bg-[#12121a] border border-[#1e1e2e] p-6">
-                            <label className="block text-sm font-medium text-[#8b8ba3] mb-3">
-                                Email Prompt
+                            <label className="block text-sm font-medium text-[#8b8ba3] mb-1">
+                                Email Body
                             </label>
+                            <p className="text-xs text-[#555570] mb-3">
+                                This is exactly what your leads will receive. Use <span className="text-indigo-400 font-mono">{"{name}"}</span> and <span className="text-indigo-400 font-mono">{"{company}"}</span> as placeholders.
+                            </p>
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
-                                placeholder='e.g. "Send them an email about our website design services and how we can help their business grow online"'
-                                rows={4}
-                                className="w-full bg-[#0e0e16] border border-[#2a2a3d] rounded-xl px-4 py-3 text-white placeholder:text-[#3a3a50] text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-300 resize-none"
+                                placeholder={`Example:\n\nI came across {company} and was impressed by what you're building.\n\nWe help businesses like yours automate customer calls with AI voice agents — handling appointments, follow-ups, and support 24/7.\n\nWould you be open to a quick 10-minute chat this week? I'd love to show you how it could work for {company}.`}
+                                rows={8}
+                                className="w-full bg-[#0e0e16] border border-[#2a2a3d] rounded-xl px-4 py-3 text-white placeholder:text-[#3a3a50] text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-300 resize-vertical"
                             />
                         </div>
 
@@ -467,12 +470,11 @@ export default function Home() {
                             <span className="text-indigo-400 mt-0.5 text-lg">ℹ️</span>
                             <div className="text-xs text-[#8b8ba3] leading-relaxed">
                                 <p>
-                                    Each email gets a <span className="text-indigo-400 font-medium">unique subject line</span> picked
-                                    randomly from 8 templates. A <span className="text-indigo-400 font-medium">2-minute cooldown</span> runs
-                                    between each send to avoid spam filters.
+                                    Your prompt <span className="text-indigo-400 font-medium">IS the email body</span> — write exactly what you want sent.
+                                    A greeting (Hi ...) and sign-off are <span className="text-indigo-400 font-medium">auto-added</span> if you don&apos;t include them.
                                 </p>
                                 <p className="mt-1 text-[#555570]">
-                                    Gmail limit: ~500 emails/day · Recommended: 100–150 per session
+                                    2-min cooldown between sends · Gmail limit: ~500/day
                                 </p>
                             </div>
                         </div>
