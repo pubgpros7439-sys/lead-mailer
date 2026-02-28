@@ -451,27 +451,27 @@ export default function Home() {
                         {/* Prompt Textarea */}
                         <div className="rounded-2xl bg-[#12121a] border border-[#1e1e2e] p-6">
                             <label className="block text-sm font-medium text-[#8b8ba3] mb-1">
-                                Email Body
+                                Email Instruction
                             </label>
                             <p className="text-xs text-[#555570] mb-3">
-                                This is exactly what your leads will receive. Use <span className="text-indigo-400 font-mono">{"{name}"}</span> and <span className="text-indigo-400 font-mono">{"{company}"}</span> as placeholders.
+                                Describe what you want to pitch. <span className="text-indigo-400 font-medium">AI will craft a professional email</span> from your idea.
                             </p>
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
-                                placeholder={`Example:\n\nI came across {company} and was impressed by what you're building.\n\nWe help businesses like yours automate customer calls with AI voice agents — handling appointments, follow-ups, and support 24/7.\n\nWould you be open to a quick 10-minute chat this week? I'd love to show you how it could work for {company}.`}
-                                rows={8}
+                                placeholder={"e.g. Send him an email about how his website is just a basic template and isn't getting him any clients. Tell him I can build a modern website with an integrated AI voice agent that books appointments for his business automatically."}
+                                rows={5}
                                 className="w-full bg-[#0e0e16] border border-[#2a2a3d] rounded-xl px-4 py-3 text-white placeholder:text-[#3a3a50] text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-300 resize-vertical"
                             />
                         </div>
 
                         {/* Info Banner */}
                         <div className="rounded-xl bg-indigo-500/5 border border-indigo-500/10 px-5 py-3 flex items-start gap-3">
-                            <span className="text-indigo-400 mt-0.5 text-lg">ℹ️</span>
+                            <span className="text-indigo-400 mt-0.5 text-lg">🤖</span>
                             <div className="text-xs text-[#8b8ba3] leading-relaxed">
                                 <p>
-                                    Your prompt <span className="text-indigo-400 font-medium">IS the email body</span> — write exactly what you want sent.
-                                    A greeting (Hi ...) and sign-off are <span className="text-indigo-400 font-medium">auto-added</span> if you don&apos;t include them.
+                                    <span className="text-indigo-400 font-medium">AI-powered:</span> each lead gets a <span className="text-indigo-400 font-medium">unique, professionally crafted</span> email
+                                    with a custom subject line — all generated from your instruction.
                                 </p>
                                 <p className="mt-1 text-[#555570]">
                                     2-min cooldown between sends · Gmail limit: ~500/day

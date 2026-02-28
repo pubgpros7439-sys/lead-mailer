@@ -1,120 +1,58 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// ── Build email body from the user's prompt ───────────────────
-// Replaces {name}, {company} placeholders if the user uses them.
-// If the prompt is plain text, it wraps it with a greeting and sign-off.
-function buildEmail(prompt, name, company, fromName) {
-  // Replace placeholders in the prompt
-  let body = prompt
-    .replace(/\{name\}/gi, name)
-    .replace(/\{company\}/gi, company);
-
-  // Split into paragraphs (by double newline or single newline)
-  const paragraphs = body
-    .split(/\n\s*\n|\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  // Check if user already included a greeting (Hi/Hey/Hello/Dear)
-  const hasGreeting = /^(hi|hey|hello|dear|greetings)\b/i.test(paragraphs[0] || "");
-
-  // Check if user already included a sign-off (thanks/regards/cheers/best)
-  const lastPara = paragraphs[paragraphs.length - 1] || "";
-  const hasSignOff = /^(thanks|thank you|regards|best|cheers|sincerely|warm regards|looking forward)\b/i.test(lastPara);
-
-  // Build HTML
-  let htmlParts = [];
-
-  if (!hasGreeting) {
-    htmlParts.push(`<p>Hi ${name},</p>`);
-  }
-
-  paragraphs.forEach((p) => {
-    // Bold any mention of the company name for emphasis
-    const highlighted = p.replace(
-      new RegExp(`(${company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"),
-      "<strong>$1</strong>"
-    );
-    htmlParts.push(`<p>${highlighted}</p>`);
-  });
-
-  if (!hasSignOff) {
-    htmlParts.push(
-      `<p style="margin-top: 24px;">Looking forward to hearing from you!<br /><strong>${fromName}</strong></p>`
-    );
-  } else {
-    // Add sender name after their sign-off
-    htmlParts.push(`<p><strong>${fromName}</strong></p>`);
-  }
-
-  const htmlBody = `
-    <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; line-height: 1.7; max-width: 600px;">
-      ${htmlParts.join("\n      ")}
-    </div>
-  `;
-
-  // Build plain text version
-  let textParts = [];
-  if (!hasGreeting) {
-    textParts.push(`Hi ${name},`);
-  }
-  textParts.push(...paragraphs);
-  if (!hasSignOff) {
-    textParts.push(`\nLooking forward to hearing from you!\n${fromName}`);
-  } else {
-    textParts.push(fromName);
-  }
-
-  const textBody = textParts.join("\n\n");
-
-  return { htmlBody, textBody };
+// ── Initialize Gemini AI ──────────────────────────────────────
+function getGeminiModel() {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  return genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 }
 
-// ── Generate a subject line from the prompt context ───────────
-// Extracts the main topic/service from the prompt and creates
-// varied subject lines based on it.
-function generateSubject(prompt, company) {
-  // Try to extract the core service/topic from the prompt
-  const topicPatterns = [
-    /(?:about|for|regarding|offering|pitch|sell|promote)\s+(?:our\s+|my\s+|the\s+)?(.+?)(?:\.|,|$)/i,
-    /(?:voice\s+agent|ai\s+agent|chatbot|automation|marketing|seo|design|development|consulting|saas|software|app|service)/i,
-  ];
+// ── Use AI to craft the email ─────────────────────────────────
+async function craftEmail(prompt, name, company, fromName) {
+  const model = getGeminiModel();
 
-  let topic = "";
-  for (const pattern of topicPatterns) {
-    const match = prompt.match(pattern);
-    if (match) {
-      topic = match[1] || match[0];
-      topic = topic.trim().replace(/[.!?,;]+$/, "");
-      if (topic.length > 50) topic = topic.substring(0, 50);
-      break;
-    }
-  }
+  const systemPrompt = `You are a professional cold email copywriter. The user will give you a rough idea or instruction about what they want to email a lead about. You must craft a polished, professional, personalized cold email based on that instruction.
 
-  const templates = topic
-    ? [
-      `Quick idea for ${company} — ${topic}`,
-      `${company} + ${topic} = growth?`,
-      `A thought about ${topic} for ${company}`,
-      `Can ${topic} help ${company} grow?`,
-      `${company} — have you considered ${topic}?`,
-      `Thought this might help ${company}`,
-      `Quick question for ${company}`,
-      `An idea for ${company}'s growth`,
-    ]
-    : [
-      `Quick idea for ${company}`,
-      `A thought I had about ${company}`,
-      `Can I help ${company} grow?`,
-      `${company} — I noticed something interesting`,
-      `Thought this might help ${company}`,
-      `Quick question for ${company}`,
-      `An idea for ${company}`,
-      `Something ${company} should know`,
-    ];
+Rules:
+- Write ONLY the email body (no subject line, no "Subject:" prefix)
+- Start with "Hi ${name},"
+- Mention their company "${company}" naturally 1-2 times
+- Keep it concise (3-4 short paragraphs max)
+- Sound human, warm, and conversational — NOT robotic or salesy
+- End with a soft call-to-action (like asking for a quick chat)
+- Sign off with: "Looking forward to hearing from you!\\n${fromName}"
+- Do NOT use placeholders like [your name] or [company] — use the actual values provided
+- Do NOT include any markdown formatting, just plain text
+- Do NOT add a subject line — only the email body`;
 
-  return templates[Math.floor(Math.random() * templates.length)];
+  const result = await model.generateContent([
+    { text: systemPrompt },
+    { text: `Instruction: ${prompt}\n\nLead name: ${name}\nLead company: ${company}\nSender name: ${fromName}` },
+  ]);
+
+  return result.response.text().trim();
+}
+
+// ── Use AI to generate a relevant subject line ────────────────
+async function craftSubject(prompt, company) {
+  const model = getGeminiModel();
+
+  const result = await model.generateContent([
+    {
+      text: `Generate exactly ONE short, compelling email subject line for a cold email to "${company}". 
+The email is about: ${prompt}
+
+Rules:
+- Maximum 8 words
+- No quotes, no emojis, no special characters
+- Sound natural and curiosity-driven
+- Do NOT include "Subject:" prefix
+- Return ONLY the subject line text, nothing else`,
+    },
+  ]);
+
+  return result.response.text().trim().replace(/^["']|["']$/g, "");
 }
 
 export async function POST(request) {
@@ -131,8 +69,15 @@ export async function POST(request) {
 
     if (!prompt || !prompt.trim()) {
       return NextResponse.json(
-        { success: false, error: "Email prompt/body is required" },
+        { success: false, error: "Email prompt is required" },
         { status: 400 }
+      );
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { success: false, error: "GEMINI_API_KEY not configured" },
+        { status: 500 }
       );
     }
 
@@ -147,16 +92,29 @@ export async function POST(request) {
 
     const fromName = process.env.FROM_NAME || "Your Name";
 
-    // ── Build email from the user's prompt ────────────────────────
-    const subject = generateSubject(prompt, company);
-    const { htmlBody, textBody } = buildEmail(prompt, name, company, fromName);
+    // ── AI-craft the email and subject ────────────────────────────
+    const [emailBody, subject] = await Promise.all([
+      craftEmail(prompt, name, company, fromName),
+      craftSubject(prompt, company),
+    ]);
+
+    // ── Convert plain text to HTML ────────────────────────────────
+    const htmlBody = `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; line-height: 1.7; max-width: 600px;">
+        ${emailBody
+        .split(/\n\s*\n|\n/)
+        .filter(Boolean)
+        .map((p) => `<p>${p.trim()}</p>`)
+        .join("\n        ")}
+      </div>
+    `;
 
     // ── Send the email ────────────────────────────────────────────
     await transporter.sendMail({
       from: `"${fromName}" <${process.env.GMAIL_USER}>`,
       to: email,
       subject,
-      text: textBody,
+      text: emailBody,
       html: htmlBody,
     });
 
