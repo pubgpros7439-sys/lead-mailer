@@ -48,14 +48,28 @@ function MailIcon() {
     );
 }
 
+function RefreshIcon({ spinning }) {
+    return (
+        <svg className={spinning ? "spinner" : ""} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+            <path d="M16 16h5v5" />
+        </svg>
+    );
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // RESULTS PAGE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export default function ResultsPage() {
     const [leads, setLeads] = useState([]);
-    const [filter, setFilter] = useState("all"); // "all" | "replied" | "no-reply"
+    const [filter, setFilter] = useState("all");
     const [search, setSearch] = useState("");
     const [loaded, setLoaded] = useState(false);
+    const [checking, setChecking] = useState(false);
+    const [lastChecked, setLastChecked] = useState(null);
+    const [checkResult, setCheckResult] = useState(null);
 
     // ── Load from localStorage ──────────────────────────────────
     useEffect(() => {
@@ -73,6 +87,60 @@ export default function ResultsPage() {
             localStorage.setItem("lead-mailer-results", JSON.stringify(updated));
             return updated;
         });
+    };
+
+    // ── Auto-check replies via IMAP ───────────────────────────────
+    const checkReplies = async () => {
+        if (leads.length === 0 || checking) return;
+
+        setChecking(true);
+        setCheckResult(null);
+
+        try {
+            const unrepliedEmails = leads
+                .filter((l) => !l.replied)
+                .map((l) => l.email);
+
+            if (unrepliedEmails.length === 0) {
+                setCheckResult({ type: "info", message: "All leads already marked as replied!" });
+                setChecking(false);
+                return;
+            }
+
+            const res = await fetch("/api/check-replies", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ emails: unrepliedEmails }),
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                const repliedSet = new Set(data.repliedEmails.map((e) => e.toLowerCase()));
+
+                const updated = leads.map((lead) => {
+                    if (!lead.replied && repliedSet.has(lead.email.toLowerCase())) {
+                        return { ...lead, replied: true };
+                    }
+                    return lead;
+                });
+
+                setLeads(updated);
+                localStorage.setItem("lead-mailer-results", JSON.stringify(updated));
+                setLastChecked(new Date().toLocaleTimeString());
+                setCheckResult({
+                    type: "success",
+                    message: data.repliedCount > 0
+                        ? `Found ${data.repliedCount} new ${data.repliedCount === 1 ? "reply" : "replies"}!`
+                        : "No new replies found.",
+                });
+            } else {
+                setCheckResult({ type: "error", message: data.error || "Failed to check replies" });
+            }
+        } catch {
+            setCheckResult({ type: "error", message: "Failed to connect. Try again." });
+        }
+
+        setChecking(false);
     };
 
     // ── Stats ───────────────────────────────────────────────────
@@ -162,6 +230,43 @@ export default function ResultsPage() {
                     </div>
                 </div>
 
+                {/* ── CHECK REPLIES BUTTON ───────────────────────────── */}
+                {totalSent > 0 && (
+                    <div className="mb-6 fade-in-up">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                            <button
+                                onClick={checkReplies}
+                                disabled={checking}
+                                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs tracking-wide transition-all duration-300
+                                    disabled:opacity-50 disabled:cursor-not-allowed
+                                    bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 active:scale-[0.98]"
+                            >
+                                <RefreshIcon spinning={checking} />
+                                {checking ? "Scanning inbox..." : "Check Replies"}
+                            </button>
+                            {lastChecked && (
+                                <span className="text-[10px] text-[#3a3a50]">
+                                    Last checked: {lastChecked}
+                                </span>
+                            )}
+                        </div>
+
+                        {checkResult && (
+                            <div className={`mt-3 px-4 py-2.5 rounded-xl text-xs font-medium border ${checkResult.type === "success"
+                                    ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-400"
+                                    : checkResult.type === "error"
+                                        ? "bg-red-500/5 border-red-500/20 text-red-400"
+                                        : "bg-indigo-500/5 border-indigo-500/20 text-indigo-400"
+                                }`}>
+                                {checkResult.type === "success" && "✅ "}
+                                {checkResult.type === "error" && "⚠️ "}
+                                {checkResult.type === "info" && "ℹ️ "}
+                                {checkResult.message}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* ── FILTERS & SEARCH ──────────────────────────────── */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6 fade-in-up">
                     {/* Filter Buttons */}
@@ -175,8 +280,8 @@ export default function ResultsPage() {
                                 key={f.key}
                                 onClick={() => setFilter(f.key)}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${filter === f.key
-                                        ? "bg-indigo-500/15 text-indigo-400 border border-indigo-500/20"
-                                        : "text-[#555570] hover:text-[#8b8ba3] border border-transparent"
+                                    ? "bg-indigo-500/15 text-indigo-400 border border-indigo-500/20"
+                                    : "text-[#555570] hover:text-[#8b8ba3] border border-transparent"
                                     }`}
                             >
                                 {f.label} <span className="ml-1 opacity-60">{f.count}</span>
@@ -252,8 +357,8 @@ export default function ResultsPage() {
                                                 <button
                                                     onClick={() => toggleReplied(lead.id)}
                                                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-all duration-300 cursor-pointer active:scale-95 ${lead.replied
-                                                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
-                                                            : "bg-[#1a1a25] text-[#555570] border border-[#2a2a3d] hover:text-[#8b8ba3] hover:border-[#3a3a5d]"
+                                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                                                        : "bg-[#1a1a25] text-[#555570] border border-[#2a2a3d] hover:text-[#8b8ba3] hover:border-[#3a3a5d]"
                                                         }`}
                                                 >
                                                     {lead.replied ? "Replied ✅" : "No Reply"}
