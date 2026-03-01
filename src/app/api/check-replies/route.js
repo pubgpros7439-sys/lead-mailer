@@ -14,14 +14,14 @@ export async function POST(request) {
             );
         }
 
-        // ── Connect to Gmail via IMAP ────────────────────────────────
+        // ── Connect via IMAP ──────────────────────────────────────
         client = new ImapFlow({
-            host: "imap.gmail.com",
-            port: 993,
+            host: process.env.IMAP_HOST,
+            port: Number(process.env.IMAP_PORT),
             secure: true,
             auth: {
-                user: process.env.GMAIL_USER,
-                pass: process.env.GMAIL_APP_PASSWORD,
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
             },
             logger: false,
         });

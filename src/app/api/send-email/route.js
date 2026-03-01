@@ -122,10 +122,12 @@ export async function POST(request) {
     }
 
     const transporter = nodemailer.createTransport({
-      service: "gmail",
+      host: process.env.EMAIL_HOST,
+      port: Number(process.env.EMAIL_PORT),
+      secure: true,
       auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
       },
     });
 
@@ -146,7 +148,7 @@ export async function POST(request) {
     `;
 
     await transporter.sendMail({
-      from: `"${fromName}" <${process.env.GMAIL_USER}>`,
+      from: `"${fromName}" <${process.env.EMAIL_USER}>`,
       to: email,
       subject,
       text: body,
