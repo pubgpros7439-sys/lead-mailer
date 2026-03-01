@@ -21,7 +21,6 @@ async function callWithRetry(fn, maxRetries = 3) {
         err.message?.includes("overloaded");
 
       if (isRetryable && i < maxRetries - 1) {
-        // Wait 15 seconds before retrying (rate limits need longer waits)
         await new Promise((r) => setTimeout(r, 15000 * (i + 1)));
         continue;
       }
@@ -30,54 +29,70 @@ async function callWithRetry(fn, maxRetries = 3) {
   }
 }
 
-// ── Use AI to craft the email ─────────────────────────────────
+// ── System prompt ─────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are a human business owner writing cold emails to potential clients. You've been doing this for years and you know what works.
+
+Your writing style:
+- You write how you actually think, not how a textbook says
+- Sentences are short. Sometimes very short. Like this.
+- You use lowercase sometimes because that's how real people text
+- You never over explain yourself
+- You sound like you genuinely noticed something about their business and couldn't help but reach out
+- You're confident but never pushy. You don't need the sale.
+- You write the first line like a human observation, not a pitch
+- You sometimes use a tiny bit of humor if it fits naturally
+- You never start with 'I' as the first word
+- Your call to action is always a soft question, never a demand
+- You write like you're the only person emailing them today because for you, this email actually matters
+
+Rules you never break:
+- Maximum 5 lines. Ever.
+- No buzzwords. No corporate speak. No AI sounding phrases.
+- No 'I hope this email finds you well'
+- No 'I am reaching out because'
+- No 'I wanted to touch base'
+- No 'Please don't hesitate to contact me'
+- Never use exclamation marks more than once
+- Never use bullet points inside the email
+- Subject line: max 5 words, lowercase, reads like a thought not a marketing headline
+- Sign off casually like a real person would
+- IMPORTANT: You are not limited to any one service or industry. You adapt completely to whatever service or offer the user describes in their instruction. If they say social media marketing — you write that. If they say accounting services — you write that. If they say graphic design — you write that. You become an expert in whatever they tell you.`;
+
+// ── Craft email with single API call ──────────────────────────
 async function craftEmail(prompt, name, company, fromName) {
   const model = getGeminiModel();
 
-  const systemPrompt = `You are a professional cold email copywriter. The user will give you a rough idea or instruction about what they want to email a lead about. You must craft a polished, professional, personalized cold email based on that instruction.
+  const userPrompt = `Lead name: ${name}
+Company: ${company}
+Sender name: ${fromName}
+My instruction: ${prompt}
 
-Rules:
-- Write ONLY the email body (no subject line, no "Subject:" prefix)
-- Start with "Hi ${name},"
-- Mention their company "${company}" naturally 1-2 times
-- Keep it concise (3-4 short paragraphs max)
-- Sound human, warm, and conversational — NOT robotic or salesy
-- End with a soft call-to-action (like asking for a quick chat)
-- Sign off with: "Looking forward to hearing from you!\n${fromName}"
-- Do NOT use placeholders like [your name] or [company] — use the actual values provided
-- Do NOT include any markdown formatting, just plain text
-- Do NOT add a subject line — only the email body`;
+Write the cold email now. Return ONLY:
+SUBJECT: (subject line here)
+BODY: (email body here)
+
+Nothing else. No explanations. No alternatives.`;
 
   return callWithRetry(async () => {
     const result = await model.generateContent([
-      { text: systemPrompt },
-      {
-        text: `Instruction: ${prompt}\n\nLead name: ${name}\nLead company: ${company}\nSender name: ${fromName}`,
-      },
+      { text: SYSTEM_PROMPT },
+      { text: userPrompt },
     ]);
-    return result.response.text().trim();
-  });
-}
 
-// ── Use AI to generate a relevant subject line ────────────────
-async function craftSubject(prompt, company) {
-  const model = getGeminiModel();
+    const raw = result.response.text().trim();
 
-  return callWithRetry(async () => {
-    const result = await model.generateContent([
-      {
-        text: `Generate exactly ONE short, compelling email subject line for a cold email to "${company}". 
-The email is about: ${prompt}
+    // Parse SUBJECT and BODY from response
+    const subjectMatch = raw.match(/^SUBJECT:\s*(.+)$/m);
+    const bodyMatch = raw.match(/BODY:\s*([\s\S]+)$/m);
 
-Rules:
-- Maximum 8 words
-- No quotes, no emojis, no special characters
-- Sound natural and curiosity-driven
-- Do NOT include "Subject:" prefix
-- Return ONLY the subject line text, nothing else`,
-      },
-    ]);
-    return result.response.text().trim().replace(/^["']|["']$/g, "");
+    if (!subjectMatch || !bodyMatch) {
+      throw new Error("Failed to parse AI response");
+    }
+
+    return {
+      subject: subjectMatch[1].trim(),
+      body: bodyMatch[1].trim(),
+    };
   });
 }
 
@@ -85,13 +100,9 @@ export async function POST(request) {
   try {
     const { name, email, company, prompt } = await request.json();
 
-    // ── Validate required fields ──────────────────────────────────
     if (!name || !email || !company) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Missing required fields: name, email, company",
-        },
+        { success: false, error: "Missing required fields: name, email, company" },
         { status: 400 }
       );
     }
@@ -110,7 +121,6 @@ export async function POST(request) {
       );
     }
 
-    // ── Configure nodemailer transport ────────────────────────────
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -121,14 +131,13 @@ export async function POST(request) {
 
     const fromName = process.env.FROM_NAME || "Your Name";
 
-    // ── AI-craft the email and subject (sequential to avoid rate limits) ──
-    const emailBody = await craftEmail(prompt, name, company, fromName);
-    const subject = await craftSubject(prompt, company);
+    // ── Single AI call for both subject + body ────────────────
+    const { subject, body } = await craftEmail(prompt, name, company, fromName);
 
-    // ── Convert plain text to HTML ────────────────────────────────
+    // ── Convert to HTML ───────────────────────────────────────
     const htmlBody = `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; line-height: 1.7; max-width: 600px;">
-        ${emailBody
+        ${body
         .split(/\n\s*\n|\n/)
         .filter(Boolean)
         .map((p) => `<p>${p.trim()}</p>`)
@@ -136,12 +145,11 @@ export async function POST(request) {
       </div>
     `;
 
-    // ── Send the email ────────────────────────────────────────────
     await transporter.sendMail({
       from: `"${fromName}" <${process.env.GMAIL_USER}>`,
       to: email,
       subject,
-      text: emailBody,
+      text: body,
       html: htmlBody,
     });
 
