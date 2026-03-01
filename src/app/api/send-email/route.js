@@ -136,7 +136,7 @@ export async function POST(request) {
       },
     });
 
-    const fromName = process.env.FROM_NAME || "Your Name";
+    const fromName = process.env.FROM_NAME || "Karan";
 
     // ── Single AI call for both subject + body ────────────────
     const { subject, body } = await craftEmail(prompt, name, company, fromName);
