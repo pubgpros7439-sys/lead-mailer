@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 
 // ─── Icon Components ─────────────────────────────────────────────
 function UploadIcon() {
@@ -246,6 +247,22 @@ export default function Home() {
         }
 
         setIsSendingActive(false);
+
+        // ── Save sent leads to localStorage ──────────────────────
+        const sentLeads = leads
+            .map((lead, i) => ({
+                id: Date.now() + i,
+                name: lead.name,
+                email: lead.email,
+                company: lead.company,
+                sentAt: new Date().toISOString(),
+                replied: false,
+            }))
+            .filter((_, i) => newStatuses[i] === "sent");
+
+        const existing = JSON.parse(localStorage.getItem("lead-mailer-results") || "[]");
+        localStorage.setItem("lead-mailer-results", JSON.stringify([...sentLeads, ...existing]));
+
         setCurrentState("done");
     }, [leads, prompt]);
 
@@ -336,6 +353,16 @@ export default function Home() {
     return (
         <div className="min-h-screen bg-[#0a0a0f] flex items-start justify-center px-4 py-12">
             <div className="w-full max-w-3xl">
+                {/* ── NAV ───────────────────────────────────────────── */}
+                <nav className="flex items-center justify-center gap-2 mb-8 fade-in-up">
+                    <span className="px-4 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold tracking-wide">
+                        Campaign
+                    </span>
+                    <Link href="/results" className="px-4 py-2 rounded-xl text-[#555570] hover:text-[#8b8ba3] hover:bg-[#12121a] text-xs font-medium tracking-wide transition-all duration-300">
+                        Results
+                    </Link>
+                </nav>
+
                 {/* ── HEADER ────────────────────────────────────────── */}
                 <div className="text-center mb-10 fade-in-up">
                     <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium mb-6 tracking-wide">
